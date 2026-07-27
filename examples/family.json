@@ -1,0 +1,33 @@
+{
+  "people": [
+    {"id": "alice", "name": "Alice"},
+    {"id": "bob", "name": "Bob"},
+    {"id": "carol", "name": "Carol"},
+    {"id": "dave", "name": "Dave"},
+    {"id": "erin", "name": "Erin"},
+    {"id": "frank", "name": "Frank"}
+  ],
+  "history": [
+    {
+      "alice": "carol",
+      "bob": "dave",
+      "carol": "erin",
+      "dave": "frank",
+      "erin": "alice",
+      "frank": "bob"
+    },
+    {
+      "alice": "dave",
+      "bob": "erin",
+      "carol": "frank",
+      "dave": "alice",
+      "erin": "bob",
+      "frank": "carol"
+    }
+  ],
+  "immediate_family": [
+    {"person_1": "alice", "person_2": "bob"},
+    {"person_1": "carol", "person_2": "dave"},
+    {"person_1": "erin", "person_2": "frank"}
+  ]
+}
