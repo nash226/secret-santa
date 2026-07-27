@@ -75,8 +75,7 @@ case. A local unconstrained benchmark produced:
 
 Times vary by machine and constraints. The recursive matcher reached Python's
 recursion limit at 2,000 participants, so this version is appropriate for
-family-sized exchanges. Supporting thousands would require an iterative matcher
-or Hopcroft-Karp.
+family-sized exchanges.
 
 The HTTP server handles requests concurrently and retains no draw state. A
 production multi-user service would still need authentication, transactional
