@@ -2,10 +2,12 @@ import json
 import random
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from secret_santa import ExchangeService, InMemoryExchangeRepository
 from secret_santa.web import RequestError, SecretSantaHandler, create_draw
 
 
@@ -58,8 +60,16 @@ class CreateDrawTests(unittest.TestCase):
 class WebServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        class IsolatedHandler(SecretSantaHandler):
+            exchange_service = ExchangeService(
+                InMemoryExchangeRepository()
+            )
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+
         cls.server = ThreadingHTTPServer(
-            ("127.0.0.1", 0), SecretSantaHandler
+            ("127.0.0.1", 0), IsolatedHandler
         )
         cls.thread = threading.Thread(
             target=cls.server.serve_forever, daemon=True
@@ -110,6 +120,110 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(
             result["history_entry"], {"alice": "bob", "bob": "alice"}
         )
+
+    def test_exchange_endpoint_creates_private_reveal_links(self) -> None:
+        request = Request(
+            f"{self.base_url}/api/exchanges",
+            data=json.dumps(
+                {
+                    "people": [
+                        {"id": "alice", "name": "Alice"},
+                        {"id": "bob", "name": "Bob"},
+                    ]
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with urlopen(request) as response:
+            result = json.load(response)
+
+        self.assertEqual(response.status, 201)
+        self.assertIn("organizer_token", result)
+        self.assertEqual(len(result["participants"]), 2)
+        self.assertNotIn("recipient", result["participants"][0])
+
+        reveal_path = result["participants"][0]["reveal_path"]
+        with urlopen(f"{self.base_url}{reveal_path}") as response:
+            reveal = json.load(response)
+
+        self.assertEqual(
+            set(reveal), {"exchange_id", "giver", "recipient"}
+        )
+        self.assertNotEqual(reveal["giver"]["id"], reveal["recipient"]["id"])
+
+    def test_organizer_token_controls_access_to_reveal_links(self) -> None:
+        request = Request(
+            f"{self.base_url}/api/exchanges",
+            data=json.dumps(
+                {
+                    "people": [
+                        {"id": "alice", "name": "Alice"},
+                        {"id": "bob", "name": "Bob"},
+                    ]
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            created = json.load(response)
+
+        organizer_url = (
+            f"{self.base_url}{created['organizer_path']}"
+            f"?organizer_token={created['organizer_token']}"
+        )
+        with urlopen(organizer_url) as response:
+            organizer_view = json.load(response)
+        self.assertEqual(len(organizer_view["participants"]), 2)
+        self.assertNotIn("organizer_token", organizer_view)
+
+        with self.assertRaises(HTTPError) as context:
+            urlopen(
+                f"{self.base_url}{created['organizer_path']}"
+                "?organizer_token=wrong"
+            )
+        context.exception.close()
+        self.assertEqual(context.exception.code, 404)
+
+    def test_concurrent_exchange_requests_remain_isolated(self) -> None:
+        def create_exchange(index: int):
+            request = Request(
+                f"{self.base_url}/api/exchanges",
+                data=json.dumps(
+                    {
+                        "people": [
+                            {
+                                "id": f"{index}-alice",
+                                "name": "Alice",
+                            },
+                            {
+                                "id": f"{index}-bob",
+                                "name": "Bob",
+                            },
+                        ]
+                    }
+                ).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request) as response:
+                return json.load(response)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            exchanges = list(executor.map(create_exchange, range(24)))
+
+        self.assertEqual(
+            len({exchange["exchange_id"] for exchange in exchanges}), 24
+        )
+        for index, exchange in enumerate(exchanges):
+            self.assertTrue(
+                all(
+                    participant["person"]["id"].startswith(f"{index}-")
+                    for participant in exchange["participants"]
+                )
+            )
 
     def test_invalid_draw_returns_user_safe_error(self) -> None:
         request = Request(
