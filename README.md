@@ -79,8 +79,7 @@ family-sized exchanges.
 
 The HTTP server handles requests concurrently and retains no draw state. A
 production multi-user service would still need authentication, transactional
-storage, HTTPS, and multiple worker processes. Generating an exchange once and
-serving individual results would make subsequent reads `O(1)`.
+storage, HTTPS, and multiple worker processes.
 
 ## Assumptions
 
