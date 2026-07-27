@@ -16,9 +16,14 @@ The request accepts the existing draw shape:
     {"id": "bob", "name": "Bob"}
   ],
   "immediate_family": [],
-  "history": []
+  "history": [],
+  "previous_exchange": null
 }
 ```
+
+For a following-year draw, `previous_exchange` may contain the prior
+`exchange_id` and `organizer_token`. The server derives the rolling history
+without returning the previous assignment to the browser.
 
 The `201 Created` response contains organizer credentials and one private
 reveal path per participant. It intentionally contains no recipients:
@@ -32,7 +37,8 @@ reveal path per participant. It intentionally contains no recipients:
     {
       "person": {"id": "alice", "name": "Alice"},
       "reveal_token": "...",
-      "reveal_path": "/api/reveals/..."
+      "reveal_path": "/reveal/...",
+      "reveal_api_path": "/api/reveals/..."
     }
   ]
 }
@@ -44,6 +50,9 @@ reveal path per participant. It intentionally contains no recipients:
 
 Returns only the giver and recipient associated with that token. Repeating the
 request returns the stored result and never generates a new draw.
+
+`GET /reveal/{reveal_token}` serves the participant interface. The browser
+requests the matching API endpoint only after the participant opens the card.
 
 ## Retrieve organizer links
 

@@ -1,6 +1,13 @@
-const STORAGE_KEY = "merry-match-state-v1";
+const STORAGE_KEY = "merry-match-state-v3";
+const LEGACY_STORAGE_KEYS = [
+  "merry-match-state-v2",
+  "merry-match-state-v1",
+];
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const elements = {
+  organizerView: document.querySelector("#organizer-view"),
+  organizerHeaderActions: document.querySelector("#organizer-header-actions"),
   personForm: document.querySelector("#person-form"),
   personName: document.querySelector("#person-name"),
   peopleList: document.querySelector("#people-list"),
@@ -21,38 +28,73 @@ const elements = {
   sortingCards: [...document.querySelectorAll(".name-card")],
   results: document.querySelector("#results"),
   resultList: document.querySelector("#result-list"),
+  copyAllButton: document.querySelector("#copy-all-button"),
+  copyStatus: document.querySelector("#copy-status"),
   editButton: document.querySelector("#edit-button"),
   nextYearButton: document.querySelector("#next-year-button"),
-  workspace: document.querySelector(".workspace"),
+  workspace: document.querySelector("#workspace"),
+  historyControl: document.querySelector("#history-control"),
   historyNote: document.querySelector("#history-note"),
+  forgetHistoryButton: document.querySelector("#forget-history-button"),
   resetButton: document.querySelector("#reset-button"),
+  revealView: document.querySelector("#reveal-view"),
+  revealButton: document.querySelector("#reveal-button"),
+  revealCopy: document.querySelector("#reveal-copy"),
+  revealResult: document.querySelector("#reveal-result"),
+  revealGiver: document.querySelector("#reveal-giver"),
+  revealRecipient: document.querySelector("#reveal-recipient"),
+  revealError: document.querySelector("#reveal-error"),
 };
 
 let state = loadState();
-let pendingHistoryEntry = null;
+let currentParticipants = [];
 
 function emptyState() {
-  return { people: [], relationships: [], history: [] };
+  return {
+    people: [],
+    relationships: [],
+    previousExchange: null,
+    activeExchange: null,
+  };
+}
+
+function isExchangeReference(value) {
+  return (
+    value &&
+    typeof value.exchange_id === "string" &&
+    typeof value.organizer_token === "string"
+  );
 }
 
 function loadState() {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (
-      Array.isArray(value?.people) &&
-      Array.isArray(value?.relationships) &&
-      Array.isArray(value?.history)
-    ) {
-      return value;
+  for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      if (
+        Array.isArray(value?.people) &&
+        Array.isArray(value?.relationships)
+      ) {
+        return {
+          people: value.people,
+          relationships: value.relationships,
+          previousExchange: isExchangeReference(value.previousExchange)
+            ? value.previousExchange
+            : null,
+          activeExchange: isExchangeReference(value.activeExchange)
+            ? value.activeExchange
+            : null,
+        };
+      }
+    } catch {
+      // Damaged browser state should not prevent the application from opening.
     }
-  } catch {
-    // A damaged browser entry should not prevent the app from opening.
   }
   return emptyState();
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
 }
 
 function makeId() {
@@ -77,6 +119,20 @@ function showError(message) {
   elements.formError.hidden = !message;
 }
 
+function scrollTo(element) {
+  element.scrollIntoView({
+    behavior: reduceMotion ? "auto" : "smooth",
+    block: "start",
+  });
+}
+
+function clearCompletedView() {
+  state.activeExchange = null;
+  currentParticipants = [];
+  elements.results.hidden = true;
+  elements.copyStatus.textContent = "";
+}
+
 function render() {
   elements.personCount.textContent = state.people.length;
   elements.emptyState.hidden = state.people.length > 0;
@@ -84,13 +140,12 @@ function render() {
   elements.familyPanel.hidden = state.people.length < 2;
   elements.drawButton.disabled = state.people.length < 2;
   elements.resetButton.hidden =
-    state.people.length === 0 && state.history.length === 0;
+    state.people.length === 0 &&
+    !state.previousExchange;
 
-  elements.historyNote.hidden = state.history.length === 0;
+  elements.historyControl.hidden = !state.previousExchange;
   elements.historyNote.textContent =
-    state.history.length === 1
-      ? "1 previous draw remembered"
-      : `${state.history.length} previous draws remembered`;
+    "The last draw will prevent recent repeats.";
 
   elements.peopleList.innerHTML = state.people
     .map(
@@ -103,9 +158,9 @@ function render() {
           <button
             class="icon-button"
             type="button"
-            data-remove-person="${person.id}"
+            data-remove-person="${escapeText(person.id)}"
             aria-label="Remove ${escapeText(person.name)}"
-          >×</button>
+          >Remove</button>
         </li>
       `
     )
@@ -114,7 +169,9 @@ function render() {
   const options = state.people
     .map(
       (person) =>
-        `<option value="${person.id}">${escapeText(person.name)}</option>`
+        `<option value="${escapeText(person.id)}">${escapeText(
+          person.name
+        )}</option>`
     )
     .join("");
   elements.familyOne.innerHTML = options;
@@ -130,10 +187,9 @@ function render() {
       if (!first || !second) return "";
       return `
         <li class="connection-item">
-          <span class="connection-bow" aria-hidden="true">✦</span>
-          <span class="connection-label">${escapeText(first.name)} and ${escapeText(
-            second.name
-          )}</span>
+          <span class="connection-label">${escapeText(
+            first.name
+          )} and ${escapeText(second.name)}</span>
           <button
             class="icon-button"
             type="button"
@@ -141,7 +197,7 @@ function render() {
             aria-label="Remove connection between ${escapeText(
               first.name
             )} and ${escapeText(second.name)}"
-          >×</button>
+          >Remove</button>
         </li>
       `;
     })
@@ -165,6 +221,7 @@ elements.personForm.addEventListener("submit", (event) => {
     return;
   }
 
+  clearCompletedView();
   state.people.push({ id: makeId(), name });
   elements.personName.value = "";
   showError("");
@@ -177,17 +234,11 @@ elements.peopleList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-remove-person]");
   if (!button) return;
 
+  clearCompletedView();
   const personId = button.dataset.removePerson;
   state.people = state.people.filter((person) => person.id !== personId);
   state.relationships = state.relationships.filter(
     (pair) => pair.person_1 !== personId && pair.person_2 !== personId
-  );
-  state.history = state.history.map((assignment) =>
-    Object.fromEntries(
-      Object.entries(assignment).filter(
-        ([giver, recipient]) => giver !== personId && recipient !== personId
-      )
-    )
   );
   saveState();
   render();
@@ -222,6 +273,7 @@ elements.familyForm.addEventListener("submit", (event) => {
     return;
   }
 
+  clearCompletedView();
   state.relationships.push({ person_1: firstId, person_2: secondId });
   showError("");
   saveState();
@@ -231,20 +283,27 @@ elements.familyForm.addEventListener("submit", (event) => {
 elements.familyList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-remove-relationship]");
   if (!button) return;
+  clearCompletedView();
   state.relationships.splice(Number(button.dataset.removeRelationship), 1);
   saveState();
   render();
 });
 
+elements.forgetHistoryButton.addEventListener("click", () => {
+  state.previousExchange = null;
+  saveState();
+  render();
+  showError("Previous draw history was removed. The next draw starts fresh.");
+});
+
 elements.drawButton.addEventListener("click", async () => {
   showError("");
-  pendingHistoryEntry = null;
   elements.sortingOverlay.hidden = false;
   document.body.style.overflow = "hidden";
 
   const messages = [
     "Shuffling the stockings…",
-    "Checking the family tree…",
+    "Checking family connections…",
     "Tying the final bows…",
   ];
   let messageIndex = 0;
@@ -258,25 +317,36 @@ elements.drawButton.addEventListener("click", async () => {
     });
   }, 650);
 
-  const minimumAnimation = new Promise((resolve) => setTimeout(resolve, 2100));
+  const minimumAnimation = new Promise((resolve) =>
+    setTimeout(resolve, reduceMotion ? 0 : 2100)
+  );
 
   try {
-    const responsePromise = fetch("/api/draw", {
+    const payload = {
+      people: state.people,
+      immediate_family: state.relationships,
+    };
+    if (state.previousExchange) {
+      payload.previous_exchange = state.previousExchange;
+    }
+
+    const responsePromise = fetch("/api/exchanges", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        people: state.people,
-        immediate_family: state.relationships,
-        history: state.history,
-      }),
+      body: JSON.stringify(payload),
     });
     const [response] = await Promise.all([responsePromise, minimumAnimation]);
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error || "The draw could not be completed.");
     }
-    pendingHistoryEntry = data.history_entry;
-    showResults(data.assignments);
+
+    state.activeExchange = {
+      exchange_id: data.exchange_id,
+      organizer_token: data.organizer_token,
+    };
+    saveState();
+    showOrganizerLinks(data.participants);
   } catch (error) {
     showError(
       error instanceof Error
@@ -290,78 +360,124 @@ elements.drawButton.addEventListener("click", async () => {
   }
 });
 
-function showResults(assignments) {
-  elements.resultList.innerHTML = assignments
-    .map(
-      ({ giver, recipient }) => `
-        <button class="result-card" type="button" data-recipient="${escapeText(
-          recipient.name
-        )}" aria-expanded="false">
-          <span class="result-giver">${escapeText(giver.name)}’s card</span>
-          <span class="result-instruction">Tap to reveal your person</span>
-        </button>
-      `
-    )
-    .join("");
-  elements.results.hidden = false;
-  elements.results.scrollIntoView({ behavior: "smooth", block: "start" });
+function revealUrl(participant) {
+  return new URL(participant.reveal_path, window.location.origin).href;
 }
 
-elements.resultList.addEventListener("click", (event) => {
-  const card = event.target.closest(".result-card");
-  if (!card) return;
+function showOrganizerLinks(participants) {
+  currentParticipants = participants;
+  elements.resultList.innerHTML = participants
+    .map((participant) => {
+      const name = escapeText(participant.person.name);
+      const url = escapeText(revealUrl(participant));
+      return `
+        <article class="result-card">
+          <div class="link-person">
+            <span class="person-avatar" aria-hidden="true">${name
+              .trim()
+              .charAt(0)
+              .toUpperCase()}</span>
+            <div>
+              <h3>${name}</h3>
+              <a href="${url}" target="_blank" rel="noreferrer">${url}</a>
+            </div>
+          </div>
+          <button
+            class="button button-secondary copy-link-button"
+            type="button"
+            data-copy-url="${url}"
+            data-copy-name="${name}"
+          >Copy link</button>
+        </article>
+      `;
+    })
+    .join("");
+  elements.results.hidden = false;
+  elements.copyStatus.textContent = "";
+  scrollTo(elements.results);
+}
 
-  if (card.classList.contains("revealed")) {
-    card.classList.remove("revealed");
-    card.setAttribute("aria-expanded", "false");
-    card.querySelector(".result-recipient").outerHTML =
-      '<span class="result-instruction">Tap to reveal your person</span>';
+async function copyText(value) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
     return;
   }
 
-  document.querySelectorAll(".result-card.revealed").forEach((openCard) => {
-    openCard.classList.remove("revealed");
-    openCard.setAttribute("aria-expanded", "false");
-    openCard.querySelector(".result-recipient").outerHTML =
-      '<span class="result-instruction">Tap to reveal your person</span>';
-  });
-  card.classList.add("revealed");
-  card.setAttribute("aria-expanded", "true");
-  card.querySelector(".result-instruction").outerHTML = `
-    <span class="result-recipient">You’re gifting ${escapeText(
-      card.dataset.recipient
-    )}</span>
-  `;
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.opacity = "0";
+  document.body.append(textArea);
+  textArea.select();
+  const copied = document.execCommand("copy");
+  textArea.remove();
+  if (!copied) {
+    throw new Error("Copy is not available in this browser.");
+  }
+}
+
+elements.resultList.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-copy-url]");
+  if (!button) return;
+
+  try {
+    await copyText(button.dataset.copyUrl);
+    elements.copyStatus.textContent = `${button.dataset.copyName}’s link copied.`;
+    button.textContent = "Copied";
+    setTimeout(() => {
+      button.textContent = "Copy link";
+    }, 1600);
+  } catch (error) {
+    elements.copyStatus.textContent =
+      error instanceof Error ? error.message : "The link could not be copied.";
+  }
+});
+
+elements.copyAllButton.addEventListener("click", async () => {
+  const linkText = currentParticipants
+    .map(
+      (participant) =>
+        `${participant.person.name}: ${revealUrl(participant)}`
+    )
+    .join("\n");
+  try {
+    await copyText(linkText);
+    elements.copyStatus.textContent = "All private links copied.";
+  } catch (error) {
+    elements.copyStatus.textContent =
+      error instanceof Error ? error.message : "The links could not be copied.";
+  }
 });
 
 elements.editButton.addEventListener("click", () => {
-  pendingHistoryEntry = null;
   elements.results.hidden = true;
-  elements.workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollTo(elements.workspace);
 });
 
 elements.nextYearButton.addEventListener("click", () => {
-  if (pendingHistoryEntry) {
-    state.history = [...state.history, pendingHistoryEntry].slice(-2);
-    saveState();
+  if (state.activeExchange) {
+    state.previousExchange = state.activeExchange;
   }
-  pendingHistoryEntry = null;
-  elements.results.hidden = true;
+  clearCompletedView();
+  saveState();
   render();
-  elements.workspace.scrollIntoView({ behavior: "smooth", block: "start" });
+  showError("This draw will be used to prevent repeat pairings next year.");
+  scrollTo(elements.workspace);
 });
 
 elements.resetButton.addEventListener("click", () => {
   if (
     !confirm(
-      "Start over and remove this family list, its connections, and draw history?"
+      "Start over and remove this family list, its connections, and saved history?"
     )
   ) {
     return;
   }
   state = emptyState();
-  pendingHistoryEntry = null;
+  currentParticipants = [];
   localStorage.removeItem(STORAGE_KEY);
+  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
   elements.results.hidden = true;
   elements.familyContent.hidden = true;
   elements.familyToggle.setAttribute("aria-expanded", "false");
@@ -371,4 +487,75 @@ elements.resetButton.addEventListener("click", () => {
   elements.personName.focus();
 });
 
-render();
+function revealTokenFromPath() {
+  const match = window.location.pathname.match(/^\/reveal\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function showRevealMode() {
+  elements.organizerView.hidden = true;
+  elements.organizerHeaderActions.hidden = true;
+  elements.revealView.hidden = false;
+  document.body.classList.add("reveal-mode");
+}
+
+elements.revealButton.addEventListener("click", async () => {
+  const token = revealTokenFromPath();
+  if (!token) return;
+
+  elements.revealButton.disabled = true;
+  elements.revealButton.textContent = "Opening…";
+  elements.revealError.hidden = true;
+
+  try {
+    const response = await fetch(`/api/reveals/${encodeURIComponent(token)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          "This private link could not be found. Ask the organizer for a new one."
+      );
+    }
+
+    elements.revealGiver.textContent = `${data.giver.name}, this card is for you.`;
+    elements.revealRecipient.textContent = data.recipient.name;
+    elements.revealCopy.hidden = true;
+    elements.revealButton.hidden = true;
+    elements.revealResult.hidden = false;
+  } catch (error) {
+    elements.revealButton.disabled = false;
+    elements.revealButton.textContent = "Try again";
+    elements.revealError.textContent =
+      error instanceof Error
+        ? error.message
+        : "This private link could not be opened.";
+    elements.revealError.hidden = false;
+  }
+});
+
+async function restoreOrganizerLinks() {
+  if (!state.activeExchange) return;
+
+  const { exchange_id: exchangeId, organizer_token: organizerToken } =
+    state.activeExchange;
+  const url =
+    `/api/exchanges/${encodeURIComponent(exchangeId)}` +
+    `?organizer_token=${encodeURIComponent(organizerToken)}`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok) throw new Error();
+    showOrganizerLinks(data.participants);
+  } catch {
+    state.activeExchange = null;
+    saveState();
+  }
+}
+
+const revealToken = revealTokenFromPath();
+if (revealToken) {
+  showRevealMode();
+} else {
+  render();
+  restoreOrganizerLinks();
+}

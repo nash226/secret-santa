@@ -1,66 +1,65 @@
 # Merry Match
 
-A Christmas-themed Secret Santa web app for nontechnical users. Families can
-add participants, optionally connect spouses or parents and children, animate a
-fair draw, and privately reveal one match at a time.
+A Christmas-themed Secret Santa application for nontechnical users. An
+organizer adds the family, creates one fair draw, and sends each participant a
+private reveal link.
 
-The project includes the intentionally naive Part One solution and the
-constraint-aware Python solver used by the interface for Parts Two and Three.
+The project includes the deliberately naive Part One solution and the
+constraint-aware Python solver for Parts Two and Three.
 
 ## Run
-
-Requires Python 3.11+ and has no runtime dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-secret-santa
-```
-
-Open [http://localhost:8000](http://localhost:8000). The family list,
-connections, and two most recent draws are saved only in that browser. The
-server does not persist them.
-
-## Docker
 
 ```bash
 docker build --target runtime -t secret-santa .
 docker run --rm -p 8000:8000 secret-santa
 ```
 
-Then open [http://localhost:8000](http://localhost:8000).
+Open [http://localhost:8000](http://localhost:8000).
+
+The organizer can open or copy every private link locally. Another device on
+the same network can use the links after replacing `localhost` with the Docker
+host's local IP address.
 
 ## Test
-
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
-
-Or run the same suite in Docker:
 
 ```bash
 docker build --target test -t secret-santa-test .
 docker run --rm secret-santa-test
 ```
 
-## How the draw works
+## User flow
 
-The naive solution shuffles recipients until nobody draws themselves. It is
-easy to follow but repeatedly discards invalid permutations.
+1. Add everyone participating in the exchange.
+2. Optionally connect spouses, parents, and children.
+3. Create the exchange once.
+4. Copy one private reveal link for each participant.
+5. Save the exchange as history before drawing the following year.
 
-The optimized solution builds a bipartite graph containing only allowed
-giver/recipient pairs, then finds a complete assignment using randomized
-augmenting-path matching. It prevents:
+Each reveal token returns exactly one giver and recipient. Refreshing a reveal
+link returns the stored assignment and never redraws names. Organizer
+credentials can retrieve the reveal links without exposing recipients.
+
+## Design
+
+The naive solution shuffles complete recipient lists until nobody draws
+themselves. It is easy to understand but wastes rejected work.
+
+The optimized solution filters forbidden giver and recipient pairs, then finds
+a complete assignment using randomized bipartite matching. It prevents:
 
 - self-draws;
-- a giver receiving the same recipient within a rolling three-exchange window;
-  and
+- pairings repeated within a rolling three-exchange window; and
 - pairings between spouses, parents, and children.
 
-It returns a clear error instead of relaxing rules when no complete assignment
-exists. Results are randomized but not uniformly sampled from every possible
-valid assignment.
+`ExchangeRepository` separates storage from exchange behavior. The provided
+`InMemoryExchangeRepository` uses a lock for atomic writes and concurrent
+reads. Completed exchanges are immutable, and cryptographically secure tokens
+protect organizer and participant access.
+
+The in-memory design is intentional for this take-home. Exchanges disappear
+when the process or container stops and are not shared across multiple server
+processes. PostgreSQL could replace the repository without changing the solver
+or HTTP contract.
 
 ## Scalability
 
@@ -73,18 +72,15 @@ case. A local unconstrained benchmark produced:
 | 500 | 0.050 s |
 | 1,000 | 0.209 s |
 
-Times vary by machine and constraints. The recursive matcher reached Python's
-recursion limit at 2,000 participants, so this version is appropriate for
-family-sized exchanges.
-
-The HTTP server handles requests concurrently and retains no draw state. A
-production multi-user service would still need authentication, transactional
-storage, HTTPS, and multiple worker processes.
+The recursive matcher reached Python's recursion limit at 2,000 participants.
+This is appropriate for family-sized exchanges.
 
 ## Assumptions
 
 - A three-year window means the current exchange plus the prior two exchanges.
 - Assignments are directed: `alice -> bob` differs from `bob -> alice`.
 - Every participant gives once and receives once.
-- IDs are unique; duplicate display names are disambiguated in the interface.
-- Only spouses, parents, and children are excluded; siblings remain eligible.
+- IDs are unique; the interface asks duplicate names to use a nickname.
+- Only spouses, parents, and children are excluded. Siblings remain eligible.
+- Private links are capability tokens and should be shared only with the named
+  participant.
