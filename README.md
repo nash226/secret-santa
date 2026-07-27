@@ -42,6 +42,32 @@ The output is a JSON object whose keys are givers and values are recipients.
 In a real exchange, this complete result should be distributed privately rather
 than shown to every participant.
 
+## Docker
+
+Build the runtime image:
+
+```bash
+docker build --target runtime -t secret-santa .
+```
+
+Run it with the included example mounted read-only:
+
+```bash
+docker run --rm \
+  --mount type=bind,src="$PWD/examples",dst=/data,readonly \
+  secret-santa /data/family.json --seed 42
+```
+
+The image runs as a non-root user and accepts the same arguments as the local
+`secret-santa` command.
+
+The Dockerfile also includes a test target:
+
+```bash
+docker build --target test -t secret-santa-test .
+docker run --rm secret-santa-test
+```
+
 ## Input format
 
 The input JSON contains:
