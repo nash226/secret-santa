@@ -5,29 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="Create a fair Secret Santa draw for your extended family."
+      content="Create a fair Secret Santa draw and private reveal links."
     >
     <meta property="og:title" content="Merry Match">
     <meta
       property="og:description"
-      content="Secret Santa, without the awkward draws."
+      content="A fair Secret Santa draw with one private link for everyone."
     >
     <meta property="og:image" content="/og.jpg">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <title>Merry Match — Secret Santa</title>
+    <title>Merry Match - Secret Santa</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
   </head>
   <body>
     <div class="snow" aria-hidden="true"></div>
+
     <header class="site-header">
       <a class="brand" href="/" aria-label="Merry Match home">
         <span class="brand-mark" aria-hidden="true">✦</span>
         <span>Merry Match</span>
       </a>
-      <div class="header-actions">
-        <span class="privacy-note">Saved only in this browser</span>
+      <div id="organizer-header-actions" class="header-actions">
         <button id="reset-button" class="text-button reset-button" type="button">
           Start over
         </button>
@@ -35,129 +35,200 @@
     </header>
 
     <main>
-      <section class="hero">
-        <p class="eyebrow">A little holiday magic, fairly sorted</p>
-        <h1>Secret Santa,<br><em>without the awkward draws.</em></h1>
-        <p class="hero-copy">
-          Add everyone, connect immediate family, and we’ll make a draw where
-          nobody gets themselves—or someone they already shop for.
-        </p>
-        <div class="rule-pills" aria-label="Draw rules">
-          <span>No self-draws</span>
-          <span>No recent repeats</span>
-          <span>No immediate family</span>
-        </div>
-      </section>
-
-      <section class="workspace" aria-labelledby="list-heading">
-        <div class="workspace-heading">
-          <div>
-            <p class="step-label">Step 1</p>
-            <h2 id="list-heading">Build your family list</h2>
+      <div id="organizer-view">
+        <section class="hero">
+          <div class="hero-content">
+            <h1>Secret Santa.</h1>
+            <p class="hero-copy">
+              Add your family once. Everyone gets a private link to reveal
+              their match.
+            </p>
+            <a class="button button-primary hero-action" href="#workspace">
+              Build your list
+            </a>
           </div>
-          <div class="list-meta">
-            <p class="count"><strong id="person-count">0</strong> people added</p>
-            <p id="history-note" class="history-note" hidden></p>
-          </div>
-        </div>
-
-        <form id="person-form" class="add-person-form">
-          <label for="person-name">Family member’s name</label>
-          <div class="input-row">
-            <input
-              id="person-name"
-              name="name"
-              type="text"
-              maxlength="80"
-              autocomplete="off"
-              placeholder="e.g. Aunt Priya"
-              required
+          <figure class="hero-visual">
+            <img
+              src="/holiday-tags.jpg"
+              alt="Blank gift tags tied to a wrapped Christmas present"
+              width="1536"
+              height="1024"
             >
-            <button class="button button-secondary" type="submit">
-              <span aria-hidden="true">＋</span> Add person
-            </button>
-          </div>
-        </form>
+          </figure>
+        </section>
 
-        <div id="empty-state" class="empty-state">
-          <div class="empty-gift" aria-hidden="true">✦</div>
-          <h3>Your nice list is waiting</h3>
-          <p>Add at least two people to begin.</p>
-        </div>
-
-        <ul id="people-list" class="people-list" aria-live="polite"></ul>
-
-        <div id="family-panel" class="family-panel" hidden>
-          <div class="section-heading">
+        <section
+          id="workspace"
+          class="workspace"
+          aria-labelledby="list-heading"
+        >
+          <div class="workspace-heading">
             <div>
-              <p class="step-label">Step 2 · Optional</p>
-              <h2>Connect immediate family</h2>
+              <h2 id="list-heading">Build the family list</h2>
+              <p class="section-copy">
+                Everyone added here will give and receive one gift.
+              </p>
+            </div>
+            <div class="list-meta">
+              <p class="count"><strong id="person-count">0</strong> people</p>
+              <div id="history-control" class="history-control" hidden>
+                <span id="history-note" class="history-note"></span>
+                <button id="forget-history-button" class="text-button" type="button">
+                  Forget history
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="participant-builder">
+            <form id="person-form" class="add-person-form">
+              <div class="form-intro">
+                <h3>Add a name</h3>
+                <p>Use a nickname or last name if two people share a name.</p>
+              </div>
+              <label for="person-name">Family member’s name</label>
+              <div class="input-row">
+                <input
+                  id="person-name"
+                  name="name"
+                  type="text"
+                  maxlength="80"
+                  autocomplete="off"
+                  placeholder="Aunt Priya"
+                  required
+                >
+                <button class="button button-secondary" type="submit">
+                  Add person
+                </button>
+              </div>
+            </form>
+
+            <div class="participant-list">
+              <div id="empty-state" class="empty-state">
+                <span class="empty-number" aria-hidden="true">2+</span>
+                <div>
+                  <h3>Start with two names</h3>
+                  <p>Your participant list will appear here.</p>
+                </div>
+              </div>
+
+              <ul id="people-list" class="people-list" aria-live="polite"></ul>
+            </div>
+          </div>
+
+          <div id="family-panel" class="family-panel" hidden>
+            <div class="section-heading">
+              <div>
+                <h2>Keep immediate family apart</h2>
+                <p class="section-copy">
+                  Optional: connect spouses, parents, or children.
+                </p>
+              </div>
+              <button
+                id="family-toggle"
+                class="text-button"
+                type="button"
+                aria-expanded="false"
+                aria-controls="family-content"
+              >
+                Add connections
+              </button>
+            </div>
+
+            <div id="family-content" hidden>
+              <form id="family-form" class="family-form">
+                <label>
+                  <span>Person one</span>
+                  <select id="family-person-one" required></select>
+                </label>
+                <span class="family-join" aria-hidden="true">and</span>
+                <label>
+                  <span>Person two</span>
+                  <select id="family-person-two" required></select>
+                </label>
+                <button class="button button-small" type="submit">
+                  Connect
+                </button>
+              </form>
+              <ul id="family-list" class="connection-list"></ul>
+              <p id="family-empty" class="inline-empty">
+                No immediate-family connections added.
+              </p>
+            </div>
+          </div>
+
+          <div class="draw-footer">
+            <div>
+              <p class="draw-prompt">Ready when you are.</p>
+              <p class="draw-note">
+                The draw is created once and stored until this server stops.
+              </p>
             </div>
             <button
-              id="family-toggle"
-              class="text-button"
+              id="draw-button"
+              class="button button-primary"
               type="button"
-              aria-expanded="false"
-              aria-controls="family-content"
+              disabled
             >
-              Add connections
+              Draw Secret Santas
             </button>
           </div>
-          <p class="section-copy">
-            Add spouses, parents, or children so they aren’t matched together.
+
+          <p id="form-error" class="error-message" role="alert" hidden></p>
+        </section>
+
+        <section
+          id="results"
+          class="results"
+          aria-labelledby="results-heading"
+          hidden
+        >
+          <h2 id="results-heading">The secrets are ready.</h2>
+          <p class="results-copy">
+            Send each person their own link. Opening or refreshing it never
+            redraws the exchange.
           </p>
-
-          <div id="family-content" hidden>
-            <form id="family-form" class="family-form">
-              <label>
-                <span>Person one</span>
-                <select id="family-person-one" required></select>
-              </label>
-              <span class="family-join" aria-hidden="true">and</span>
-              <label>
-                <span>Person two</span>
-                <select id="family-person-two" required></select>
-              </label>
-              <button class="button button-small" type="submit">
-                Connect
-              </button>
-            </form>
-            <ul id="family-list" class="connection-list"></ul>
-            <p id="family-empty" class="inline-empty">
-              No immediate-family connections added.
-            </p>
+          <div class="results-toolbar">
+            <p id="copy-status" class="copy-status" role="status"></p>
+            <button id="copy-all-button" class="button button-secondary" type="button">
+              Copy all links
+            </button>
           </div>
-        </div>
-
-        <div class="draw-footer">
-          <div>
-            <p class="step-label">Step 3</p>
-            <p class="draw-prompt">Ready to let the stockings decide?</p>
+          <div id="result-list" class="result-list"></div>
+          <div class="result-actions">
+            <button id="edit-button" class="button button-secondary" type="button">
+              Edit family list
+            </button>
+            <button id="next-year-button" class="button button-primary" type="button">
+              Use this draw next year
+            </button>
           </div>
-          <button id="draw-button" class="button button-primary" type="button" disabled>
-            Draw Secret Santas
-            <span aria-hidden="true">→</span>
-          </button>
-        </div>
+        </section>
+      </div>
 
-        <p id="form-error" class="error-message" role="alert" hidden></p>
-      </section>
-
-      <section id="results" class="results" aria-labelledby="results-heading" hidden>
-        <p class="eyebrow">The draw is complete</p>
-        <h2 id="results-heading">Pass the screen.<br><em>Keep the secret.</em></h2>
-        <p class="results-copy">
-          Each person can reveal their own match, then hide it before passing
-          the device along.
-        </p>
-        <div id="result-list" class="result-list"></div>
-        <div class="result-actions">
-          <button id="edit-button" class="button button-secondary" type="button">
-            Edit family list
+      <section
+        id="reveal-view"
+        class="reveal-view"
+        aria-labelledby="reveal-heading"
+        hidden
+      >
+        <div class="reveal-visual" aria-hidden="true"></div>
+        <div class="reveal-panel">
+          <p class="eyebrow">Your private Secret Santa card</p>
+          <h1 id="reveal-heading">Your match is ready.</h1>
+          <p id="reveal-copy" class="reveal-copy">
+            Open this card only if the organizer sent the link to you.
+          </p>
+          <button id="reveal-button" class="button button-primary" type="button">
+            Reveal my match
           </button>
-          <button id="next-year-button" class="button button-primary" type="button">
-            Save draw for next year
-          </button>
+          <div id="reveal-result" class="reveal-result" hidden>
+            <p id="reveal-giver" class="reveal-giver"></p>
+            <p class="reveal-lead">You are gifting</p>
+            <h2 id="reveal-recipient"></h2>
+            <p>Keep it secret and have fun choosing their gift.</p>
+          </div>
+          <p id="reveal-error" class="error-message reveal-error" role="alert" hidden></p>
         </div>
       </section>
     </main>
@@ -171,25 +242,18 @@
       hidden
     >
       <div class="sorting-card">
-        <div class="ornament" aria-hidden="true">
-          <span></span><span></span><span></span>
-        </div>
-        <p class="step-label">Holiday headquarters</p>
+        <p class="eyebrow">Making one fair draw</p>
         <h2 id="sorting-message">Shuffling the stockings…</h2>
         <div class="shuffle-stage" aria-hidden="true">
           <span class="name-card card-one">?</span>
           <span class="name-card card-two">?</span>
           <span class="name-card card-three">?</span>
         </div>
-        <div class="progress-track" aria-hidden="true">
-          <span></span>
-        </div>
       </div>
     </div>
 
     <footer>
       <span>Merry Match</span>
-      <span>Made for families, big and small.</span>
     </footer>
   </body>
 </html>

@@ -1,60 +1,12 @@
 import json
-import random
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from secret_santa import ExchangeService, InMemoryExchangeRepository
-from secret_santa.web import RequestError, SecretSantaHandler, create_draw
-
-
-class CreateDrawTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.people = [
-            {"id": "alice", "name": "Alice"},
-            {"id": "bob", "name": "Bob"},
-            {"id": "carol", "name": "Carol"},
-            {"id": "dave", "name": "Dave"},
-        ]
-
-    def test_returns_display_ready_complete_draw(self) -> None:
-        result = create_draw(
-            {
-                "people": self.people,
-                "immediate_family": [
-                    {"person_1": "alice", "person_2": "bob"}
-                ],
-            },
-            rng=random.Random(4),
-        )
-
-        self.assertEqual(len(result["assignments"]), 4)
-        self.assertEqual(set(result["history_entry"]), {
-            "alice",
-            "bob",
-            "carol",
-            "dave",
-        })
-        self.assertNotEqual(result["history_entry"]["alice"], "bob")
-        self.assertNotEqual(result["history_entry"]["bob"], "alice")
-
-    def test_rejects_invalid_browser_payload(self) -> None:
-        with self.assertRaisesRegex(RequestError, "at least two"):
-            create_draw({"people": "Alice"})
-
-    def test_turns_impossible_draw_into_helpful_message(self) -> None:
-        with self.assertRaisesRegex(RequestError, "no valid draw"):
-            create_draw(
-                {
-                    "people": self.people[:2],
-                    "immediate_family": [
-                        {"person_1": "alice", "person_2": "bob"}
-                    ],
-                }
-            )
+from secret_santa.web import SecretSantaHandler, SecretSantaHTTPServer
 
 
 class WebServerTests(unittest.TestCase):
@@ -68,7 +20,7 @@ class WebServerTests(unittest.TestCase):
             def log_message(self, format: str, *args: object) -> None:
                 pass
 
-        cls.server = ThreadingHTTPServer(
+        cls.server = SecretSantaHTTPServer(
             ("127.0.0.1", 0), IsolatedHandler
         )
         cls.thread = threading.Thread(
@@ -89,6 +41,8 @@ class WebServerTests(unittest.TestCase):
             ("/styles.css", "text/css"),
             ("/app.js", "text/javascript"),
             ("/og.jpg", "image/jpeg"),
+            ("/holiday-tags.jpg", "image/jpeg"),
+            ("/reveal/example-token", "text/html"),
         ):
             with self.subTest(path=path):
                 with urlopen(f"{self.base_url}{path}") as response:
@@ -97,29 +51,6 @@ class WebServerTests(unittest.TestCase):
                         expected_type, response.headers["Content-Type"]
                     )
                     self.assertTrue(response.read())
-
-    def test_draw_endpoint_returns_json(self) -> None:
-        request = Request(
-            f"{self.base_url}/api/draw",
-            data=json.dumps(
-                {
-                    "people": [
-                        {"id": "alice", "name": "Alice"},
-                        {"id": "bob", "name": "Bob"},
-                    ]
-                }
-            ).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        with urlopen(request) as response:
-            result = json.load(response)
-
-        self.assertEqual(response.status, 200)
-        self.assertEqual(
-            result["history_entry"], {"alice": "bob", "bob": "alice"}
-        )
 
     def test_exchange_endpoint_creates_private_reveal_links(self) -> None:
         request = Request(
@@ -144,14 +75,17 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(len(result["participants"]), 2)
         self.assertNotIn("recipient", result["participants"][0])
 
-        reveal_path = result["participants"][0]["reveal_path"]
-        with urlopen(f"{self.base_url}{reveal_path}") as response:
+        reveal_api_path = result["participants"][0]["reveal_api_path"]
+        with urlopen(f"{self.base_url}{reveal_api_path}") as response:
             reveal = json.load(response)
 
         self.assertEqual(
             set(reveal), {"exchange_id", "giver", "recipient"}
         )
         self.assertNotEqual(reveal["giver"]["id"], reveal["recipient"]["id"])
+        self.assertTrue(
+            result["participants"][0]["reveal_path"].startswith("/reveal/")
+        )
 
     def test_organizer_token_controls_access_to_reveal_links(self) -> None:
         request = Request(
@@ -227,7 +161,7 @@ class WebServerTests(unittest.TestCase):
 
     def test_invalid_draw_returns_user_safe_error(self) -> None:
         request = Request(
-            f"{self.base_url}/api/draw",
+            f"{self.base_url}/api/exchanges",
             data=b'{"people": []}',
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -242,6 +176,126 @@ class WebServerTests(unittest.TestCase):
             self.assertIn("at least two", result["error"])
         finally:
             context.exception.close()
+
+    def test_missing_previous_exchange_returns_user_safe_error(self) -> None:
+        request = Request(
+            f"{self.base_url}/api/exchanges",
+            data=json.dumps(
+                {
+                    "people": [
+                        {"id": "alice", "name": "Alice"},
+                        {"id": "bob", "name": "Bob"},
+                    ],
+                    "previous_exchange": {
+                        "exchange_id": "missing",
+                        "organizer_token": "missing",
+                    },
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with self.assertRaises(HTTPError) as context:
+            urlopen(request)
+
+        try:
+            self.assertEqual(context.exception.code, 422)
+            result = json.load(context.exception)
+            self.assertIn("no longer available", result["error"])
+        finally:
+            context.exception.close()
+
+    def test_legacy_draw_endpoint_is_removed(self) -> None:
+        request = Request(
+            f"{self.base_url}/api/draw",
+            data=b'{"people": []}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with self.assertRaises(HTTPError) as context:
+            urlopen(request)
+        context.exception.close()
+        self.assertEqual(context.exception.code, 404)
+
+    def test_previous_exchange_prevents_a_repeat_pairing(self) -> None:
+        people = [
+            {"id": "alice", "name": "Alice"},
+            {"id": "bob", "name": "Bob"},
+            {"id": "carol", "name": "Carol"},
+            {"id": "dave", "name": "Dave"},
+        ]
+
+        def post_exchange(payload):
+            request = Request(
+                f"{self.base_url}/api/exchanges",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(request) as response:
+                return json.load(response)
+
+        def recipients(exchange):
+            pairs = {}
+            for participant in exchange["participants"]:
+                with urlopen(
+                    f"{self.base_url}{participant['reveal_api_path']}"
+                ) as response:
+                    reveal = json.load(response)
+                pairs[reveal["giver"]["id"]] = reveal["recipient"]["id"]
+            return pairs
+
+        first = post_exchange({"people": people})
+        second = post_exchange(
+            {
+                "people": people,
+                "previous_exchange": {
+                    "exchange_id": first["exchange_id"],
+                    "organizer_token": first["organizer_token"],
+                },
+            }
+        )
+
+        first_pairs = recipients(first)
+        second_pairs = recipients(second)
+        self.assertTrue(
+            all(first_pairs[giver] != second_pairs[giver] for giver in first_pairs)
+        )
+
+    def test_reveal_is_stable_and_responses_are_not_cached(self) -> None:
+        request = Request(
+            f"{self.base_url}/api/exchanges",
+            data=json.dumps(
+                {
+                    "people": [
+                        {"id": "alice", "name": "Alice"},
+                        {"id": "bob", "name": "Bob"},
+                    ]
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request) as response:
+            exchange = json.load(response)
+
+        reveal_url = (
+            f"{self.base_url}"
+            f"{exchange['participants'][0]['reveal_api_path']}"
+        )
+        reveals = []
+        for _ in range(2):
+            with urlopen(reveal_url) as response:
+                reveals.append(json.load(response))
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertIn(
+                    "frame-ancestors 'none'",
+                    response.headers["Content-Security-Policy"],
+                )
+
+        self.assertEqual(reveals[0], reveals[1])
 
 
 if __name__ == "__main__":
