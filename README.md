@@ -1,60 +1,35 @@
-# Secret Santa
+# Merry Match
 
-A Python application that creates one-to-one Secret Santa assignments while
-preventing self-draws, recent repeat pairings, and immediate-family pairings.
-It includes the naive Part One solution and the constraint-aware Parts Two and
-Three solution.
+A Christmas-themed Secret Santa web app for nontechnical users. Families can
+add participants, optionally connect spouses or parents and children, animate a
+fair draw, and privately reveal one match at a time.
 
-## Requirements
-
-- Python 3.11+
-- No runtime dependencies
+The project includes the intentionally naive Part One solution and the
+constraint-aware Python solver used by the interface for Parts Two and Three.
 
 ## Run
 
-Run the included example:
-
-```bash
-PYTHONPATH=src python -m secret_santa.cli examples/family.json --seed 42
-```
-
-Or install the command locally:
+Requires Python 3.11+ and has no runtime dependencies:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-secret-santa examples/family.json
+secret-santa
 ```
 
-`--seed` is optional and makes demonstrations reproducible. Output maps each
-giver's display name to their recipient's display name.
+Open [http://localhost:8000](http://localhost:8000). The family list,
+connections, and two most recent draws are saved only in that browser. The
+server does not persist them.
 
 ## Docker
 
 ```bash
 docker build --target runtime -t secret-santa .
-docker run --rm \
-  --mount type=bind,src="$PWD/examples",dst=/data,readonly \
-  secret-santa /data/family.json --seed 42
+docker run --rm -p 8000:8000 secret-santa
 ```
 
-The runtime image uses a non-root user. To run the tests in Docker:
-
-```bash
-docker build --target test -t secret-santa-test .
-docker run --rm secret-santa-test
-```
-
-## Input
-
-The JSON input contains:
-
-- `people`: required unique IDs and display names;
-- `history`: optional assignments ordered oldest to newest; and
-- `immediate_family`: optional spouse or parent/child ID pairs.
-
-See [`examples/family.json`](examples/family.json) for a complete example.
+Then open [http://localhost:8000](http://localhost:8000).
 
 ## Test
 
@@ -62,26 +37,35 @@ See [`examples/family.json`](examples/family.json) for a complete example.
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-## Design
+Or run the same suite in Docker:
+
+```bash
+docker build --target test -t secret-santa-test .
+docker run --rm secret-santa-test
+```
+
+## How the draw works
 
 The naive solution shuffles recipients until nobody draws themselves. It is
-simple, but repeatedly discards invalid permutations and becomes unpredictable
-as constraints increase.
+easy to follow but repeatedly discards invalid permutations.
 
 The optimized solution builds a bipartite graph containing only allowed
 giver/recipient pairs, then finds a complete assignment using randomized
-augmenting-path matching. It returns a clear error when no complete assignment
-exists. The service retains no draw state, so calls are independent and safe to
-run concurrently.
+augmenting-path matching. It prevents:
 
-The matching is randomized but not uniformly sampled from every possible valid
-assignment. Uniform sampling was not required and would add substantial
-complexity.
+- self-draws;
+- a giver receiving the same recipient within a rolling three-exchange window;
+  and
+- pairings between spouses, parents, and children.
+
+It returns a clear error instead of relaxing rules when no complete assignment
+exists. Results are randomized but not uniformly sampled from every possible
+valid assignment.
 
 ## Scalability
 
 Candidate storage is `O(n²)` and matching is `O(VE)`, or `O(n³)` in the worst
-case. A local benchmark of an unconstrained draw produced:
+case. A local unconstrained benchmark produced:
 
 | Participants | Time |
 | ---: | ---: |
@@ -90,21 +74,19 @@ case. A local benchmark of an unconstrained draw produced:
 | 1,000 | 0.209 s |
 
 Times vary by machine and constraints. The recursive matcher reached Python's
-recursion limit at 2,000 participants in this benchmark, so the current solution
-is appropriate for family-sized exchanges but should be replaced with an
-iterative matcher or Hopcroft-Karp before supporting thousands of participants.
+recursion limit at 2,000 participants, so this version is appropriate for
+family-sized exchanges. Supporting thousands would require an iterative matcher
+or Hopcroft-Karp.
 
-This repository is a library and CLI, not a multi-user web application. A
-production service should generate each exchange once, store it transactionally,
-and serve individual results with authentication. Those reads would be `O(1)`;
-concurrent regeneration of large draws would instead multiply CPU and memory
-use.
+The HTTP server handles requests concurrently and retains no draw state. A
+production multi-user service would still need authentication, transactional
+storage, HTTPS, and multiple worker processes. Generating an exchange once and
+serving individual results would make subsequent reads `O(1)`.
 
 ## Assumptions
 
 - A three-year window means the current exchange plus the prior two exchanges.
 - Assignments are directed: `alice -> bob` differs from `bob -> alice`.
-- Each participant gives once and receives once.
-- IDs are stable and unique; display names need not be unique.
+- Every participant gives once and receives once.
+- IDs are unique; duplicate display names are disambiguated in the interface.
 - Only spouses, parents, and children are excluded; siblings remain eligible.
-- Constraints are never silently relaxed when a valid draw is impossible.

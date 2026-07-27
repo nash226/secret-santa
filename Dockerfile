@@ -26,5 +26,7 @@ FROM base AS runtime
 
 USER app
 
+EXPOSE 8000
+
 ENTRYPOINT ["secret-santa"]
-CMD ["--help"]
+CMD ["--host", "0.0.0.0", "--port", "8000"]

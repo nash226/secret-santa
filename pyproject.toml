@@ -13,10 +13,13 @@ authors = [{ name = "Nazeer Shaikh" }]
 dependencies = []
 
 [project.scripts]
-secret-santa = "secret_santa.cli:main"
+secret-santa = "secret_santa.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"secret_santa.web_assets" = ["*.html", "*.css", "*.js", "*.jpg"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
