@@ -13,22 +13,20 @@ window. Siblings remain eligible.
 
 ## Verify
 
-From the repository root:
+From the repository root, run the application with Docker:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-PYTHONPATH=src python3 -m secret_santa.web
+docker build --target runtime -t secret-santa .
+docker run --rm -p 8000:8000 secret-santa
 ```
 
 Open `http://localhost:8000`.
 
-Docker verification:
+Run the test suite with Docker:
 
 ```bash
 docker build --target test -t secret-santa-test .
 docker run --rm secret-santa-test
-docker build --target runtime -t secret-santa .
-docker run --rm -p 8000:8000 secret-santa
 ```
 
 ## Codebase map

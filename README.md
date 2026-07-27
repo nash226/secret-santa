@@ -7,7 +7,7 @@ private reveal link.
 The project includes the deliberately naive Part One solution and the
 constraint-aware Python solver for Parts Two and Three.
 
-## Run with Docker
+## Run
 
 ```bash
 docker build --target runtime -t secret-santa .
@@ -20,24 +20,7 @@ The organizer can open or copy every private link locally. Another device on
 the same network can use the links after replacing `localhost` with the Docker
 host's local IP address.
 
-## Run with Python
-
-Requires Python 3.11+ and has no runtime dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-secret-santa
-```
-
 ## Test
-
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
-
-Or run the same suite in Docker:
 
 ```bash
 docker build --target test -t secret-santa-test .
